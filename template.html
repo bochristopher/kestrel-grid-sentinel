@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kestrel Grid Sentinel — NASA Space Apps 2026</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+  <style>
+    :root {
+      --bg: #0e141b;
+      --panel: #16202b;
+      --ink: #e8eef4;
+      --muted: #9aabc0;
+      --line: #2a3a4c;
+      --accent: #f0b429;
+      --watch: #e85d4c;
+      --monitor: #f0b429;
+      --stand: #3d9b6e;
+      --modis: #5b8def;
+      --viirs: #e07a3d;
+      --both: #c56cd8;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 "Source Sans 3", "Segoe UI", sans-serif; }
+    header {
+      padding: 20px 28px 16px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, #1a2633 0%, var(--bg) 100%);
+    }
+    header h1 { margin: 0 0 4px; font-size: 28px; letter-spacing: -0.03em; }
+    header h1 span { color: var(--accent); }
+    .sub { color: var(--muted); max-width: 70rem; }
+    .sub a { color: #8cb4ff; }
+    .meta { margin-top: 8px; font-size: 13px; color: var(--muted); }
+    .wrap { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; padding: 16px 20px 28px; }
+    @media (max-width: 980px) { .wrap { grid-template-columns: 1fr; } }
+    .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+    .card h2 { margin: 0 0 10px; font-size: 16px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+    #map { height: 520px; border-radius: 8px; border: 1px solid var(--line); }
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 12px; }
+    @media (max-width: 700px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+    .stat { background: #101820; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+    .stat b { display: block; font-size: 22px; line-height: 1.2; }
+    .stat span { color: var(--muted); font-size: 12px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 6px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+    .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+    .Watch { background: #4a1d18; color: #ffb0a6; }
+    .Monitor { background: #3a2e12; color: #f6d27a; }
+    .Stand { background: #143326; color: #8ee0b0; }
+    .cal { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .cal th, .cal td { text-align: center; padding: 6px 4px; }
+    .celln { display: block; font-weight: 700; }
+    legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin: 8px 0; }
+    .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 4px; }
+    .note, footer { color: var(--muted); font-size: 13px; }
+    footer { padding: 0 20px 28px; max-width: 70rem; }
+    .method { white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1><span>Kestrel</span> Grid Sentinel</h1>
+    <p class="sub">A burning-activity calendar that harmonizes NASA FIRMS MODIS and VIIRS hotspots, then ranks California transmission-corridor spans for watch by Chargebotic’s line-perching drone, Kestrel. Built for the 2026 NASA International Space Apps Challenge challenge <a href="https://www.spaceappschallenge.org/2026/challenges/modis-and-viirs-hot-spots/" target="_blank" rel="noopener">Harmonization of MODIS and VIIRS Hot Spots</a>.</p>
+    <p class="meta" id="generated">Loading NASA data…</p>
+  </header>
+  <div class="wrap">
+    <section class="card">
+      <div class="stats" id="stats"></div>
+      <legend>
+        <span><i class="dot" style="background:var(--modis)"></i>MODIS only</span>
+        <span><i class="dot" style="background:var(--viirs)"></i>VIIRS only</span>
+        <span><i class="dot" style="background:var(--both)"></i>Both sensors</span>
+        <span>Lines are demo corridor waypoints, not official utility GIS.</span>
+      </legend>
+      <div id="map"></div>
+    </section>
+    <section class="card">
+      <h2>Span watch list</h2>
+      <p class="note">Priority uses harmonized FIRMS cells within 20 km of each span, Fire Radiative Power, and the latest NASA POWER 10 m wind. This is a prototype ranking, not an operational dispatch list.</p>
+      <div style="overflow:auto; max-height: 520px;">
+        <table>
+          <thead>
+            <tr><th>Priority</th><th>Span</th><th>Nearby cells</th><th>Last day</th><th>Max FRP</th><th>Score</th></tr>
+          </thead>
+          <tbody id="spans"></tbody>
+        </table>
+      </div>
+    </section>
+    <section class="card">
+      <h2>Harmonized burning-activity calendar</h2>
+      <p class="note">Values are unique 0.01° daily cells in California, not raw pixel counts. Raw MODIS and VIIRS counts are shown for comparison — VIIRS usually reports more pixels because of its finer 375 m footprint.</p>
+      <div style="overflow:auto;">
+        <table class="cal" id="calendar"></table>
+      </div>
+    </section>
+    <section class="card">
+      <h2>NASA POWER weather on the corridor</h2>
+      <div id="power"></div>
+      <h2 style="margin-top:18px">How the records were harmonized</h2>
+      <p class="note" id="method"></p>
+    </section>
+  </div>
+  <footer id="footer"></footer>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script>
+    const DATA = __DATA__;
+
+    function $(id) { return document.getElementById(id); }
+    function pill(priority) {
+      const cls = priority === "Stand down" ? "Stand" : priority;
+      return `<span class="pill ${cls}">${priority}</span>`;
+    }
+    function shade(value, max) {
+      if (!max || !value) return "transparent";
+      const t = Math.min(1, value / max);
+      const alpha = 0.15 + 0.75 * t;
+      return `rgba(240, 180, 41, ${alpha})`;
+    }
+
+    $("generated").textContent = `Built ${DATA.generated_at_label}. ${DATA.disclaimer}`;
+    $("method").textContent = DATA.method.text;
+
+    const s = DATA.summary;
+    const wind = DATA.power && DATA.power.corridor_average;
+    const windLabel = wind && wind.ws10m != null
+      ? `${wind.ws10m} m/s on ${wind.date.slice(0,4)}-${wind.date.slice(4,6)}-${wind.date.slice(6,8)}`
+      : "n/a";
+    $("stats").innerHTML = [
+      ["Raw FIRMS detections in CA", s.raw_detections, `${s.raw_modis} MODIS · ${s.raw_viirs} VIIRS`],
+      ["Harmonized daily cells", s.harmonized_cells, `${s.cells_both_sensors} seen by both sensors`],
+      ["Window", (s.date_start && s.date_end) ? `${s.date_start} to ${s.date_end}` : "n/a", "Public FIRMS 7-day files"],
+      ["Watch / monitor spans", `${s.watch_spans} / ${s.monitor_spans}`, `POWER wind ${windLabel}`],
+    ].map(([k, v, sub]) => `<div class="stat"><b>${v}</b><span>${k}<br>${sub}</span></div>`).join("");
+
+    $("spans").innerHTML = DATA.spans.map(sp => `
+      <tr>
+        <td>${pill(sp.priority)}</td>
+        <td><strong>${sp.name}</strong><br><span class="note">${sp.corridor}. ${sp.wind_note}</span></td>
+        <td>${sp.nearby_cells}${sp.nearest_km != null ? `<br><span class="note">${sp.nearest_km} km</span>` : ""}</td>
+        <td>${sp.nearby_last_day}</td>
+        <td>${sp.max_frp} MW</td>
+        <td>${sp.score}</td>
+      </tr>
+    `).join("");
+
+    const cal = DATA.calendar;
+    const maxCells = Math.max(0, ...cal.map(r => r.harmonized_cells));
+    $("calendar").innerHTML = `
+      <thead>
+        <tr>
+          <th>Date</th><th>Harmonized cells</th><th>MODIS cells</th><th>VIIRS cells</th>
+          <th>Both sensors</th><th>Raw MODIS</th><th>Raw VIIRS</th><th>Max FRP (MW)</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${cal.map(r => `<tr>
+          <td>${r.date}</td>
+          <td style="background:${shade(r.harmonized_cells, maxCells)}"><span class="celln">${r.harmonized_cells}</span></td>
+          <td>${r.cells_modis}</td>
+          <td>${r.cells_viirs}</td>
+          <td>${r.cells_both}</td>
+          <td>${r.raw_modis}</td>
+          <td>${r.raw_viirs}</td>
+          <td>${r.max_frp}</td>
+        </tr>`).join("")}
+      </tbody>`;
+
+    const avg = DATA.power.corridor_average;
+    if (avg) {
+      $("power").innerHTML = `<p>Latest non-fill NASA POWER values, averaged across corridor sample points, for <strong>${avg.date.slice(0,4)}-${avg.date.slice(4,6)}-${avg.date.slice(6,8)}</strong>:
+        10 m wind <strong>${avg.ws10m ?? "n/a"} m/s</strong> from <strong>${avg.wd10m ?? "n/a"}°</strong>,
+        2 m temperature <strong>${avg.t2m ?? "n/a"} °C</strong>,
+        relative humidity <strong>${avg.rh2m ?? "n/a"}%</strong>,
+        precipitation <strong>${avg.precip_mm ?? "n/a"} mm/day</strong>.
+        POWER daily fields can lag a few days; values of -999 are treated as missing.</p>`;
+    } else {
+      $("power").innerHTML = "<p>NASA POWER values were not available for this build.</p>";
+    }
+
+    $("footer").innerHTML = `NASA data: <a href="https://www.earthdata.nasa.gov/data/tools/firms">FIRMS</a> and
+      <a href="https://power.larc.nasa.gov/">NASA POWER</a>. Map tiles © OpenStreetMap contributors.
+      Chargebotic prototype for Space Apps 2026. Not submitted from this file.`;
+
+    const map = L.map("map").setView([36.7, -120.2], 6);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 12,
+      attribution: "&copy; OpenStreetMap contributors"
+    }).addTo(map);
+
+    DATA.spans.forEach(sp => {
+      const color = sp.priority === "Watch" ? "#e85d4c" : sp.priority === "Monitor" ? "#f0b429" : "#3d9b6e";
+      L.polyline([sp.a, sp.b], { color, weight: 5, opacity: 0.9 }).addTo(map)
+        .bindPopup(`<strong>${sp.name}</strong><br>${sp.priority} (score ${sp.score})<br>${sp.nearby_cells} nearby harmonized cells`);
+    });
+
+    const colorFor = (cell) => cell.both_sensors ? "#c56cd8" : cell.has_modis ? "#5b8def" : "#e07a3d";
+    DATA.cells.forEach(cell => {
+      const r = 4 + Math.min(10, Math.log1p(cell.max_frp));
+      L.circleMarker([cell.lat, cell.lon], {
+        radius: r, color: colorFor(cell), weight: 1, fillOpacity: 0.65, fillColor: colorFor(cell)
+      }).addTo(map).bindPopup(
+        `<strong>${cell.date}</strong><br>${cell.has_modis ? "MODIS" : ""}${cell.both_sensors ? " + " : ""}${cell.has_viirs ? "VIIRS" : ""}<br>Max FRP ${cell.max_frp} MW<br>Raw detections in cell: ${cell.n_raw}`
+      );
+    });
+  </script>
+</body>
+</html>
